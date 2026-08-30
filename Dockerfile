@@ -9,7 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование исходного кода
 COPY . .
 
-# Переменная для вывода логов в реальном времени
+# Настройка портов и вывода логов
 ENV PYTHONUNBUFFERED=1
+ENV PORT=10000
+EXPOSE 10000
 
 CMD ["python", "main.py"]
