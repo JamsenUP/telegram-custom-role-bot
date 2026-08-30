@@ -6,7 +6,7 @@ from aiogram.utils.chat_action import ChatActionSender
 
 import database
 import llm_service
-from config import DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPERATURE
+from config import DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPERATURE, LLM_MODEL
 
 router = Router()
 
@@ -35,10 +35,12 @@ async def cmd_start(message: types.Message, state: FSMContext):
     text = (
         "👋 **Добро пожаловать в бота с настраиваемыми ролями!**\n\n"
         "Вы можете задать любую роль или инструкцию (системный промпт), "
-        "и бот будет отвечать строго по вашей схеме.\n\n"
+        "выбрать модель и температуру, и бот будет отвечать строго по вашей схеме.\n\n"
         "📌 **Основные команды:**\n"
         "• `/setrole` — Задать новую роль (промпт)\n"
         "• `/getrole` — Посмотреть текущую роль\n"
+        "• `/setmodel` — Сменить модель (например, Llama 3.3 или DeepSeek)\n"
+        "• `/getmodel` — Посмотреть текущую модель\n"
         "• `/settemp` — Настроить температуру (креативность, например `0.8`)\n"
         "• `/clear` — Очистить историю диалога (роль сохранится)\n"
         "• `/reset` — Сбросить настройки на стандартные\n"
@@ -53,17 +55,53 @@ async def cmd_help(message: types.Message):
     text = (
         "📖 **Справка по использованию бота**\n\n"
         "🔹 **Управление ролью:**\n"
-        "• `/setrole` — напишите команду и отправьте текст промпта в ответ.\n"
-        "  *Или в одну строку:* `/setrole Ты — эксперт...`\n"
+        "• `/setrole` — написать команду и отправить текст промпта.\n"
         "• `/getrole` — посмотреть текущую роль.\n\n"
+        "🔹 **Смена модели нейросети (на лету):**\n"
+        "• `/setmodel meta-llama/llama-3.3-70b-instruct` — мощная и стабильная Llama 3.3\n"
+        "• `/setmodel deepseek/deepseek-chat` — DeepSeek V3 (очень умная и быстрая)\n"
+        "• `/setmodel google/gemini-2.0-flash-001` — Gemini 2.0 Flash (быстрая и точная)\n"
+        "• `/setmodel qwen/qwen-2.5-72b-instruct` — Qwen 2.5 72B (отличный ролеплей)\n"
+        "• `/getmodel` — посмотреть текущую модель.\n\n"
         "🔹 **Температура генерации (креативность):**\n"
-        "• `/settemp 0.8` — задать температуру (0.1 — строгие и точные ответы, 0.7-0.8 — живая и естественная речь, 1.0+ — максимальная фантазия).\n"
+        "• `/settemp 0.8` — задать температуру (0.7-0.8 для естественной речи).\n"
         "• `/gettemp` — посмотреть текущую температуру.\n\n"
         "🔹 **Управление памятью:**\n"
-        "• `/clear` — очистить контекст диалога.\n"
-        "• `/reset` — полный сброс на стандартного ассистента."
+        "• `/clear` — очистить историю диалога.\n"
+        "• `/reset` — полный сброс."
     )
     await message.answer(text, parse_mode="Markdown")
+
+
+@router.message(Command("setmodel", "model"))
+async def cmd_setmodel(message: types.Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        current_model = await database.get_user_model(message.from_user.id)
+        await message.answer(
+            f"🤖 **Текущая модель:** `{current_model}`\n\n"
+            f"Чтобы сменить модель, укажите её название:\n"
+            f"• `/setmodel meta-llama/llama-3.3-70b-instruct` (Рекомендуется 🔥)\n"
+            f"• `/setmodel deepseek/deepseek-chat`\n"
+            f"• `/setmodel google/gemini-2.0-flash-001`\n"
+            f"• `/setmodel qwen/qwen-2.5-72b-instruct`\n"
+            f"• `/setmodel meta-llama/llama-3.1-8b-instruct:free` (Бесплатная)",
+            parse_mode="Markdown",
+        )
+        return
+
+    new_model = args[1].strip()
+    await database.set_user_model(message.from_user.id, new_model)
+    await message.answer(
+        f"✅ **Модель успешно изменена на:**\n`{new_model}` 🚀",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(Command("getmodel"))
+async def cmd_getmodel(message: types.Message):
+    current_model = await database.get_user_model(message.from_user.id)
+    await message.answer(f"🤖 **Текущая модель:** `{current_model}`", parse_mode="Markdown")
 
 
 @router.message(Command("settemp", "temp", "temperature"))
@@ -175,7 +213,7 @@ async def cmd_reset(message: types.Message, state: FSMContext):
     await database.clear_chat_history(message.from_user.id)
     await message.answer(
         "🔄 **Все настройки сброшены!**\n"
-        "Установлена стандартная роль ассистента, температура 0.8, память очищена.",
+        "Установлена стандартная роль ассистента, температура 0.8, модель по умолчанию, память очищена.",
         parse_mode="Markdown",
     )
 
@@ -188,9 +226,10 @@ async def handle_user_query(message: types.Message):
     if not user_text:
         return
 
-    # Получаем промпт, температуру и контекст
+    # Получаем промпт, температуру, модель и контекст
     system_prompt = await database.get_user_prompt(user_id)
     temperature = await database.get_user_temperature(user_id)
+    model = await database.get_user_model(user_id)
     history = await database.get_chat_history(user_id)
 
     # Отображаем статус «печатает...»
@@ -199,7 +238,8 @@ async def handle_user_query(message: types.Message):
             system_prompt=system_prompt,
             history=history,
             user_message=user_text,
-            temperature=temperature
+            temperature=temperature,
+            model=model
         )
 
     # Сохраняем сообщения в базу данных
