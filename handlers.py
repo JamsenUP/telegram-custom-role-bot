@@ -15,6 +15,10 @@ class RoleStates(StatesGroup):
     waiting_for_prompt = State()
 
 
+class PlanStates(StatesGroup):
+    waiting_for_plan_prompt = State()
+
+
 def split_text(text: str, max_length: int = 4000) -> list[str]:
     """Разбивает длинный текст на части для соблюдения лимитов Telegram (4096 символов)."""
     chunks = []
@@ -33,19 +37,19 @@ def split_text(text: str, max_length: int = 4000) -> list[str]:
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     text = (
-        "👋 **Добро пожаловать в бота с настраиваемыми ролями!**\n\n"
-        "Вы можете задать любую роль или инструкцию (системный промпт), "
-        "выбрать модель и температуру, и бот будет отвечать строго по вашей схеме.\n\n"
+        "👋 **Добро пожаловать в бота с настраиваемыми ролями и генератором планов!**\n\n"
         "📌 **Основные команды:**\n"
-        "• `/setrole` — Задать новую роль (промпт)\n"
+        "• `/plan` — 📅 **Сгенерировать новый план на день / эфир**\n"
+        "• `/setplanprompt` — Настроить шаблон/инструкции для генератора планов\n"
+        "• `/getplanprompt` — Посмотреть текущий шаблон плана\n\n"
+        "🎭 **Настройки общения:**\n"
+        "• `/setrole` — Задать роль (системный промпт)\n"
         "• `/getrole` — Посмотреть текущую роль\n"
-        "• `/setmodel` — Сменить модель (например, Llama 3.3 или DeepSeek)\n"
-        "• `/getmodel` — Посмотреть текущую модель\n"
-        "• `/settemp` — Настроить температуру (креативность, например `0.8`)\n"
-        "• `/clear` — Очистить историю диалога (роль сохранится)\n"
-        "• `/reset` — Сбросить настройки на стандартные\n"
-        "• `/help` — Справка и примеры\n\n"
-        "💬 *Просто напишите сообщение, чтобы начать диалог!*"
+        "• `/setmodel` — Выбрать модель нейросети\n"
+        "• `/settemp` — Настроить креативность (температуру)\n"
+        "• `/clear` — Очистить историю диалога\n"
+        "• `/help` — Подробная справка\n\n"
+        "💬 *Отправьте команду `/plan` для генерации сценария или просто напишите сообщение!*"
     )
     await message.answer(text, parse_mode="Markdown")
 
@@ -53,25 +57,121 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @router.message(Command("help"))
 async def cmd_help(message: types.Message):
     text = (
-        "📖 **Справка по использованию бота**\n\n"
-        "🔹 **Управление ролью:**\n"
-        "• `/setrole` — написать команду и отправить текст промпта.\n"
-        "• `/getrole` — посмотреть текущую роль.\n\n"
-        "🔹 **Смена модели нейросети (на лету):**\n"
-        "• `/setmodel meta-llama/llama-3.3-70b-instruct` — мощная и стабильная Llama 3.3\n"
-        "• `/setmodel deepseek/deepseek-chat` — DeepSeek V3 (очень умная и быстрая)\n"
-        "• `/setmodel google/gemini-2.0-flash-001` — Gemini 2.0 Flash (быстрая и точная)\n"
-        "• `/setmodel qwen/qwen-2.5-72b-instruct` — Qwen 2.5 72B (отличный ролеплей)\n"
-        "• `/getmodel` — посмотреть текущую модель.\n\n"
-        "🔹 **Температура генерации (креативность):**\n"
-        "• `/settemp 0.8` — задать температуру (0.7-0.8 для естественной речи).\n"
-        "• `/gettemp` — посмотреть текущую температуру.\n\n"
-        "🔹 **Управление памятью:**\n"
-        "• `/clear` — очистить историю диалога.\n"
-        "• `/reset` — полный сброс."
+        "📖 **Справка по командам бота**\n\n"
+        "📅 **Генератор планов:**\n"
+        "• `/plan` — мгновенно создает новый план по вашему шаблону.\n"
+        "  *Можно с уточнениями:* `/plan добавь больше интерактива в 3-й час`\n"
+        "• `/setplanprompt` — задать ваши собственные правила и структуру для генерации планов.\n"
+        "• `/getplanprompt` — посмотреть текущую инструкцию для планов.\n\n"
+        "🎭 **Ролевой чат:**\n"
+        "• `/setrole` — настроить характер и роль собеседника.\n"
+        "• `/getrole` — посмотреть текущую роль.\n"
+        "• `/setmodel <название>` — сменить модель (например, `meta-llama/llama-3.3-70b-instruct`).\n"
+        "• `/settemp <0.0-2.0>` — настроить температуру (0.8 — живая речь).\n"
+        "• `/clear` — очистить историю диалога."
     )
     await message.answer(text, parse_mode="Markdown")
 
+
+# ==========================================
+#     ГЕНЕРАЦИЯ И НАСТРОЙКА ПЛАНОВ
+# ==========================================
+
+@router.message(Command("plan", "makeplan", "dailyplan"))
+async def cmd_generate_plan(message: types.Message):
+    user_id = message.from_user.id
+    args = message.text.split(maxsplit=1)
+    extra_wishes = args[1].strip() if len(args) > 1 else ""
+
+    # Получаем шаблон плана и системные настройки
+    base_plan_prompt = await database.get_user_plan_prompt(user_id)
+    user_role = await database.get_user_prompt(user_id)
+    temperature = await database.get_user_temperature(user_id)
+    model = await database.get_user_model(user_id)
+
+    full_plan_request = base_plan_prompt
+    if extra_wishes:
+        full_plan_request += f"\n\nДополнительные пожелания к этому плану:\n{extra_wishes}"
+
+    system_instruction = (
+        f"{user_role}\n\n"
+        "Ты также составляешь четкие, профессиональные, поминутно структурированные планы и сценарии "
+        "в точном соответствии с инструкцией пользователя."
+    )
+
+    async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+        reply_text = await llm_service.generate_response(
+            system_prompt=system_instruction,
+            history=[],
+            user_message=full_plan_request,
+            temperature=temperature,
+            model=model
+        )
+
+    # Сохраняем генерацию в историю
+    await database.add_message(user_id, "user", f"/plan {extra_wishes}".strip())
+    await database.add_message(user_id, "assistant", reply_text)
+
+    chunks = split_text(reply_text)
+    for chunk in chunks:
+        await message.answer(chunk)
+
+
+@router.message(Command("setplanprompt"))
+async def cmd_setplanprompt(message: types.Message, state: FSMContext):
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1 and args[1].strip():
+        new_prompt = args[1].strip()
+        await database.set_user_plan_prompt(message.from_user.id, new_prompt)
+        await message.answer(
+            f"✅ **Инструкция для команды `/plan` успешно сохранена!**\n\n"
+            f"📋 *Ваш шаблон плана:*\n`{new_prompt}`\n\n"
+            f"Теперь отправьте `/plan`, чтобы сгенерировать план по этой схеме.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await state.set_state(PlanStates.waiting_for_plan_prompt)
+    await message.answer(
+        "📝 **Отправьте текст инструкции (промпта) для генератора плана следующим сообщением:**\n\n"
+        "Опишите, как именно бот должен составлять план, на сколько часов разбивать, какие блоки и активности включать.\n"
+        "Для отмены отправьте `/cancel`.",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(PlanStates.waiting_for_plan_prompt)
+async def process_new_plan_prompt(message: types.Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Пожалуйста, отправьте текстовое описание для плана.")
+        return
+
+    new_prompt = message.text.strip()
+    await database.set_user_plan_prompt(message.from_user.id, new_prompt)
+    await state.clear()
+
+    await message.answer(
+        f"✅ **Шаблон для генератора планов сохранен!**\n\n"
+        f"📋 *Ваш промпт плана:*\n`{new_prompt}`\n\n"
+        f"🚀 Чтобы получить готовый сценарий, отправьте команду `/plan`!",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(Command("getplanprompt"))
+async def cmd_getplanprompt(message: types.Message):
+    plan_prompt = await database.get_user_plan_prompt(message.from_user.id)
+    await message.answer(
+        f"📅 **Текущий шаблон для команды `/plan`:**\n\n"
+        f"`{plan_prompt}`\n\n"
+        f"Чтобы изменить шаблон, используйте `/setplanprompt`.",
+        parse_mode="Markdown",
+    )
+
+
+# ==========================================
+#     НАСТРОЙКИ МОДЕЛИ И РОЛЕЙ
+# ==========================================
 
 @router.message(Command("setmodel", "model"))
 async def cmd_setmodel(message: types.Message):
@@ -112,7 +212,7 @@ async def cmd_settemp(message: types.Message):
         await message.answer(
             f"🌡️ **Текущая температура:** `{current_temp}`\n\n"
             f"Чтобы изменить, укажите значение от `0.0` до `2.0`:\n"
-            f"Пример: `/settemp 0.8` (рекомендуется 0.7 – 0.8 для естественной речи)",
+            f"Пример: `/settemp 0.8`",
             parse_mode="Markdown",
         )
         return
@@ -167,7 +267,7 @@ async def cmd_cancel(message: types.Message, state: FSMContext):
         return
 
     await state.clear()
-    await message.answer("❌ Настройка роли отменена.")
+    await message.answer("❌ Действие отменено.")
 
 
 @router.message(RoleStates.waiting_for_prompt)

@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 async def set_bot_commands(bot: Bot):
     """Регистрирует список команд в меню Telegram."""
     commands = [
-        BotCommand(command="start", description="🚀 Запустить бота"),
+        BotCommand(command="plan", description="📅 Сгенерировать план на день/эфир"),
+        BotCommand(command="setplanprompt", description="📝 Настроить шаблон плана"),
+        BotCommand(command="getplanprompt", description="🔍 Текущий шаблон плана"),
         BotCommand(command="setrole", description="🎭 Установить роль/промпт"),
         BotCommand(command="getrole", description="👀 Посмотреть текущую роль"),
         BotCommand(command="setmodel", description="🤖 Выбрать модель LLM"),
@@ -79,7 +81,6 @@ async def run_bot_session():
     await set_bot_commands(bot)
     await bot.delete_webhook(drop_pending_updates=False)
 
-    # Всегда поднимаем web health-сервер для облачных платформ
     web_runner = await start_web_health_server()
 
     logger.info("🟢 Бот успешно запущен и ожидает сообщений...")
