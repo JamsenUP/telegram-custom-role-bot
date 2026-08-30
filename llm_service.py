@@ -12,13 +12,14 @@ client = AsyncOpenAI(
 async def generate_response(
     system_prompt: str,
     history: List[Dict[str, str]],
-    user_message: str
+    user_message: str,
+    temperature: float = 0.8
 ) -> str:
-    """Генерация ответа модели на основе системного промпта, истории и нового сообщения."""
+    """Генерация ответа модели на основе системного промпта, истории, сообщения и температуры."""
     if not config.OPENAI_API_KEY:
         return (
             "⚠️ Ошибка: API ключ модели не настроен. "
-            "Пожалуйста, укажите `OPENAI_API_KEY` в файле `.env`."
+            "Пожалуйста, укажите `OPENAI_API_KEY` в переменных окружения."
         )
 
     # Собираем сообщения: Системный промпт + Предыдущая история + Новое сообщение
@@ -30,7 +31,7 @@ async def generate_response(
         completion = await client.chat.completions.create(
             model=config.LLM_MODEL,
             messages=messages,
-            temperature=0.7,
+            temperature=temperature,
         )
         response_text = completion.choices[0].message.content
         return response_text or "..."
