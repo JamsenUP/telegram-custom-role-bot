@@ -32,6 +32,7 @@ async def generate_response(
             model=config.LLM_MODEL,
             messages=messages,
             temperature=temperature,
+            max_tokens=config.MAX_TOKENS,
         )
         response_text = completion.choices[0].message.content
         return response_text or "..."

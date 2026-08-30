@@ -14,6 +14,7 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "").strip().strip("'\"").strip() 
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini").strip().strip("'\"").strip()
 MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "10"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.8"))
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "1500"))
 
 DEFAULT_SYSTEM_PROMPT = (
     "Ты — умный и дружелюбный AI-ассистент. "
