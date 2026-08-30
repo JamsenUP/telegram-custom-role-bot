@@ -1,0 +1,16 @@
+[Unit]
+Description=Telegram Custom Role Bot (24/7 Service)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/custom_role_telegram_bot
+ExecStart=/usr/bin/python3 main.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/telegram_bot.log
+StandardError=append:/var/log/telegram_bot_error.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Environment variables & secrets
+.env
+
+# Database & runtime files
+*.db
+*.db-journal
+*.log
+bot.log
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class

@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  telegram-bot:
+    build: .
+    container_name: telegram_role_bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./bot_database.db:/app/bot_database.db
+      - ./bot.log:/app/bot.log
